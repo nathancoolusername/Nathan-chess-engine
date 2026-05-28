@@ -1,6 +1,7 @@
 import chess
 import math
 import copy
+from collections import Counter
 
 class Piece:
     def __init__(self, name, color):
@@ -28,6 +29,7 @@ class Board:
             else:
                 for _ in range(8):
                     self.board[a].append(None)
+        self.position_history = []
         self.turn = "white"
         self.castling_rights = {
             "white_kingside" :True,
@@ -107,9 +109,9 @@ class Board:
                 candidates.append((7, 2))
         if self.board[square[0]][square[1]].color == "black":
             if self.can_castle(self.board[square[0]][square[1]].color, "king"):
-                candidates.append((7, 6))
+                candidates.append((0, 6))
             if self.can_castle(self.board[square[0]][square[1]].color, "queen"):
-                candidates.append((7, 2))
+                candidates.append((0, 2))
         if self.board[square[0]][square[1]].color == "white":
             return [c for c in candidates if not self.is_attacked(c, "black")]
         else:
@@ -175,7 +177,7 @@ class Board:
                     moves.append(current)
         for i in directions[1:]:
             current = (square[0] + i[0], square[1] + i[1])
-            if self.board[current[0]][current[1]] is not None and self.board[current[0]][current[1]].color != self.board[square[0]][square[1]].color:
+            if 0 <= current[0] < 8 and 0 <= current[1] < 8 and self.board[current[0]][current[1]] is not None and self.board[current[0]][current[1]].color != self.board[square[0]][square[1]].color:
                 moves.append(current)
             if self.en_passant_square is not None and current == self.en_passant_square:
                 current = (self.en_passant_square[0], self.en_passant_square[1])
@@ -224,8 +226,12 @@ class Board:
         saved_castling = copy.deepcopy(self.castling_rights)
         saved_ep = self.en_passant_square
         saved_halfmove = self.halfmove_clock
+        saved_clock = self.move_clock
+        saved_turn = self.turn
         moves = []
         everything = self.get_moves(square)
+        if everything == []:
+            return []
         for i in everything:
             self.board[i[0]][i[1]] = self.board[square[0]][square[1]]
             self.board[square[0]][square[1]] = None
@@ -236,10 +242,122 @@ class Board:
             self.castling_rights = saved_castling
             self.en_passant_square = saved_ep
             self.halfmove_clock = saved_halfmove
+            self.move_clock = saved_clock
+            self.turn = saved_turn
         return moves
     
-    def make_move():
-        pass 
+    def make_move(self, from_square, to_square):
+        place_1 = self.board[from_square[0]][from_square[1]] 
+        place_2 = self.board[to_square[0]][to_square[1]]
+        moves = self.legal_moves(from_square)
+        turn = self.turn
+        if to_square in moves:
+            if place_1.name == "king" and abs(from_square[1] - to_square[1]) == 2:
+                self.board[to_square[0]][to_square[1]] = self.board[from_square[0]][from_square[1]]
+                self.board[from_square[0]][from_square[1]] = None
+                if from_square[1] > to_square[1]:
+                    self.board[from_square[0]][to_square[1]+1] = self.board[from_square[0]][0]
+                    self.board[from_square[0]][0] = None
+                else: 
+                    self.board[from_square[0]][to_square[1]-1] = self.board[from_square[0]][7]
+                    self.board[from_square[0]][7] = None
+                self.castling_rights[f"{place_1.color}_queenside"] = False
+                self.castling_rights[f"{place_1.color}_kingside"] = False
+            else:
+                if place_1.name == "rook" and from_square[1] == 7:
+                    self.castling_rights[f"{place_1.color}_kingside"] = False
+                if place_1.name == "rook" and from_square[1] == 0:
+                    self.castling_rights[f"{place_1.color}_queenside"] = False
+                if place_1.name == "pawn" and abs(to_square[0]-from_square[0]) == 2:
+                    self.en_passant_square = (to_square[0]-1, to_square[1]) if place_1.color == "black" else (to_square[0]+1, to_square[1])
+                else:
+                    if to_square == self.en_passant_square:
+                        if place_1.color == "white":
+                            self.board[to_square[0]+1][to_square[1]] = None
+                        else:
+                            self.board[to_square[0]-1][to_square[1]] = None
+                    self.en_passant_square = None
+                if place_1.name == "pawn" and (to_square[0] == 0 or to_square[0] == 7):
+                    self.board[to_square[0]][to_square[1]] = Piece("queen", place_1.color)
+                    self.board[from_square[0]][from_square[1]] = None
+                else:
+                    self.board[to_square[0]][to_square[1]] = self.board[from_square[0]][from_square[1]]
+                    self.board[from_square[0]][from_square[1]] = None
+                if place_2 == None and place_1.name != "pawn":
+                    self.halfmove_clock += 1
+                else:
+                    self.halfmove_clock = 0
+            self.move_clock += 1
+            self.turn = "black" if turn == "white" else "white"
+            self.position_history.append(self.board_string())
+        else: 
+            print("Illegal move")
+ 
+    def is_game_over(self):
+        moves = []
+        pieces = []
+        insufficient = [{("king", "black"), ("king", "white")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "black"), ("knight", "white")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("knight", "black")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("bishop", "black")}, 
+                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "black")}, 
+                        {("king", "black"), ("king", "white"), ("knight", "black"), ("knight", "black")},
+                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "white")}]
+        for i in range(8):
+            for j, a in enumerate(self.board[i]):
+                if a is not None and a.color == self.turn:
+                    moves += self.legal_moves((i, j))
+                if a is not None:
+                    pieces.append((a.name, a.color))
+        if not moves and self.is_in_check(self.turn):
+            print("You got checkmated bro")
+            return True
+        elif not moves:
+            print("Stalemate bro")
+            return True
+        if self.halfmove_clock == 100:
+            print("Too passive --> Draw")
+            return True
+        counts = Counter(self.position_history)
+        if any(c >= 3 for c in counts.values()):
+            print("Repeat! Repeat! Draw")
+            return True
+        if set(pieces) in insufficient :
+            print("not enough to win bro --> Draw")
+            return True
+        return False
+        
+    def board_string(self):
+        string = ""
+        for i in range(8):
+            for j, a in enumerate(self.board[i]):
+                if a is None:
+                    string += "."
+                    continue
+                if a.color == "white":
+                    if a.name == "knight":
+                        string += "N"
+                    else:
+                        string += a.name[0].capitalize()
+                else:
+                    if a.name == "knight":
+                        string += "n"
+                    else:
+                        string += a.name[0]
+        string += "-" if self.en_passant_square is None else f"{self.en_passant_square}"
+        string += "+" if self.turn == "black" else ";"
+        string += "1" if self.castling_rights["white_kingside"] else "2"
+        string += "3" if self.castling_rights["white_queenside"] else "4"
+        string += "5" if self.castling_rights["black_kingside"] else "6"
+        string += "7" if self.castling_rights["black_queenside"] else "8"
+        return string
+
+    def play(self):
+        while not self.is_game_over():
+            self.display()
+            from_square = tuple(int(x) for x in input("From (row col): ").split())
+            to_square = tuple(int(x) for x in input("To (row col): ").split())
+            self.make_move(from_square, to_square)
 
     def display(self):
         for a in range(8):
@@ -261,6 +379,5 @@ class Board:
             print(" ".join(row))
 
 
-    
 man = Board()
-man.display()
+man.play()
