@@ -42,19 +42,19 @@ class Board:
         self.halfmove_clock = 0   
     
     def get_moves(self, where):
-        if where is None:
+        if where is None or self.board[where[0]][where[1]] is None:
             return []
-        if self.board[where[0]][where[1]].name == "rook":
+        elif self.board[where[0]][where[1]].name == "rook":
             return self.rook_move(where)
-        if self.board[where[0]][where[1]].name == "bishop":
+        elif self.board[where[0]][where[1]].name == "bishop":
             return self.bishop_move(where)
-        if self.board[where[0]][where[1]].name == "queen":
+        elif self.board[where[0]][where[1]].name == "queen":
             return self.queen_move(where)
-        if self.board[where[0]][where[1]].name == "pawn":
+        elif self.board[where[0]][where[1]].name == "pawn":
             return self.pawn_move(where)
-        if self.board[where[0]][where[1]].name == "knight":
+        elif self.board[where[0]][where[1]].name == "knight":
             return self.knight_move(where)
-        if self.board[where[0]][where[1]].name == "king":
+        elif self.board[where[0]][where[1]].name == "king":
             return self.king_move(where)
         return []
     def bishop_move(self, square):
@@ -320,7 +320,7 @@ class Board:
             return True
         counts = Counter(self.position_history)
         if any(c >= 3 for c in counts.values()):
-            print("Repeat! Repeat! Draw")
+            print("Repeat Draw")
             return True
         if set(pieces) in insufficient :
             print("not enough to win bro --> Draw")
@@ -352,12 +352,23 @@ class Board:
         string += "7" if self.castling_rights["black_queenside"] else "8"
         return string
 
-    def play(self):
+    def play_alone(self):
         while not self.is_game_over():
             self.display()
             from_square = tuple(int(x) for x in input("From (row col): ").split())
             to_square = tuple(int(x) for x in input("To (row col): ").split())
             self.make_move(from_square, to_square)
+
+    def play_engine(self, depth):
+        while not self.is_game_over():
+            self.display()
+            if self.turn == "white":
+                from_square = tuple(int(x) for x in input("From (row col): ").split())
+                to_square = tuple(int(x) for x in input("To (row col): ").split())
+                self.make_move(from_square, to_square)
+            else:
+                move = self.best_move(depth)
+                self.make_move(move[0], move[1])
 
     def display(self):
         for a in range(8):
@@ -378,6 +389,85 @@ class Board:
                             row.append(i.name[0])
             print(" ".join(row))
 
+    def evaluate(self):
+        score = 0
+        points = {
+            "king" : 0,
+            "queen" : 9,
+            "bishop" : 3,
+            "knight" : 3,
+            "rook" : 5,
+            "pawn" : 1
+        }
+        for a in range(8):
+            for i in self.board[a]:
+                if i is None:
+                    continue
+                elif i.color == "white":
+                    score += points[i.name]
+                else:
+                    score -= points[i.name]
+        return score
+    
+    def minimax(self, depth):
+        moves = []
+        if depth == 0 or self.is_game_over():
+            return self.evaluate()
+        else:
+            scores = {} 
+            for a in range(8):
+                for j, i in enumerate(self.board[a]):
+                    if i is None:
+                        continue
+                    else:
+                        if i.color == self.turn:
+                            for q in self.legal_moves((a, j)):
+                                saved_board = copy.deepcopy(self.board)
+                                saved_castling = copy.deepcopy(self.castling_rights)
+                                saved_ep = self.en_passant_square
+                                saved_halfmove = self.halfmove_clock
+                                saved_clock = self.move_clock
+                                saved_turn = self.turn
+                                self.make_move((a, j), q)
+                                scores[q] = self.minimax(depth-1)
+                                self.board = copy.deepcopy(saved_board)
+                                self.castling_rights = saved_castling
+                                self.en_passant_square = saved_ep
+                                self.halfmove_clock = saved_halfmove
+                                self.move_clock = saved_clock
+                                self.turn = saved_turn
+        if self.turn == "white":
+            return max(scores.values())
+        else:
+            return min(scores.values())
+
+    def best_move(self, depth):
+        scores = {}
+        for a in range(8):
+                for j, i in enumerate(self.board[a]):
+                    if i is None:
+                        continue
+                    else:
+                        if i.color == self.turn:
+                            for q in self.legal_moves((a, j)):
+                                saved_board = copy.deepcopy(self.board)
+                                saved_castling = copy.deepcopy(self.castling_rights)
+                                saved_ep = self.en_passant_square
+                                saved_halfmove = self.halfmove_clock
+                                saved_clock = self.move_clock
+                                saved_turn = self.turn
+                                self.make_move((a, j), q)
+                                scores[((a,j), q)] = self.minimax(depth-1)
+                                self.board = copy.deepcopy(saved_board)
+                                self.castling_rights = saved_castling
+                                self.en_passant_square = saved_ep
+                                self.halfmove_clock = saved_halfmove
+                                self.move_clock = saved_clock
+                                self.turn = saved_turn
+        if self.turn == "white":
+            return max(scores, key = scores.get)
+        else:
+            return min(scores, key = scores.get)
 
 man = Board()
-man.play()
+man.play_engine(2)
