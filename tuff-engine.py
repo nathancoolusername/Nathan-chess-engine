@@ -29,7 +29,6 @@ class Board:
             else:
                 for _ in range(8):
                     self.board[a].append(None)
-        self.position_history = []
         self.turn = "white"
         self.castling_rights = {
             "white_kingside" :True,
@@ -39,7 +38,8 @@ class Board:
         }
         self.en_passant_square = None
         self.move_clock = 0
-        self.halfmove_clock = 0   
+        self.halfmove_clock = 0  
+        self.position_history = [self.board_string()]
     
     def get_moves(self, where):
         if where is None or self.board[where[0]][where[1]] is None:
@@ -222,30 +222,76 @@ class Board:
                     return self.is_attacked((i, j), color)
     
     def legal_moves(self, square):
-        saved_board = copy.deepcopy(self.board)
-        saved_castling = copy.deepcopy(self.castling_rights)
-        saved_ep = self.en_passant_square
-        saved_halfmove = self.halfmove_clock
-        saved_clock = self.move_clock
-        saved_turn = self.turn
         moves = []
         everything = self.get_moves(square)
         if everything == []:
             return []
         for i in everything:
+            state = self.save_move_state(square, i)
             self.board[i[0]][i[1]] = self.board[square[0]][square[1]]
             self.board[square[0]][square[1]] = None
             if not self.is_in_check(self.board[i[0]][i[1]].color):
                 moves.append(i)
-            saved_halfmove = self.halfmove_clock
-            self.board = copy.deepcopy(saved_board)
-            self.castling_rights = saved_castling
-            self.en_passant_square = saved_ep
-            self.halfmove_clock = saved_halfmove
-            self.move_clock = saved_clock
-            self.turn = saved_turn
+            self.undo_move(state)
         return moves
     
+    def save_move_state(self, from_square, to_square):
+        piece = self.board[from_square[0]][from_square[1]]
+        state = {
+            "from_square": from_square,
+            "to_square": to_square,
+            "moved_piece": piece,
+            "captured_piece": self.board[to_square[0]][to_square[1]],
+            "prev_en_passant": self.en_passant_square,
+            "prev_castling_rights": self.castling_rights.copy(),
+            "prev_halfmove_clock": self.halfmove_clock,
+            "prev_move_clock": self.move_clock,
+            "prev_turn": self.turn,
+            "history_len": len(self.position_history),
+            "is_castle": piece.name == "king" and abs(from_square[1] - to_square[1]) == 2,
+            "is_en_passant": piece.name == "pawn" and to_square == self.en_passant_square,
+            "is_promotion": piece.name == "pawn" and to_square[0] in (0, 7),
+        }
+
+        if state["is_castle"]:
+            rook_from = (from_square[0], 7 if to_square[1] > from_square[1] else 0)
+            rook_to = (from_square[0], 5 if to_square[1] > from_square[1] else 3)
+            state["rook_from"] = rook_from
+            state["rook_to"] = rook_to
+            state["rook_piece"] = self.board[rook_from[0]][rook_from[1]]
+
+        if state["is_en_passant"]:
+            capture_sq = (
+                (to_square[0] + 1, to_square[1])
+                if piece.color == "white"
+                else (to_square[0] - 1, to_square[1])
+            )
+            state["ep_capture_sq"] = capture_sq
+            state["captured_piece"] = self.board[capture_sq[0]][capture_sq[1]]
+
+        return state
+    
+    def undo_move(self, state):
+        if state["is_castle"]:
+            self.board[state["from_square"][0]][state["from_square"][1]] = state["moved_piece"]
+            self.board[state["to_square"][0]][state["to_square"][1]] = None
+            self.board[state["rook_from"][0]][state["rook_from"][1]] = state["rook_piece"]
+            self.board[state["rook_to"][0]][state["rook_to"][1]] = None
+        elif state["is_en_passant"]:
+            self.board[state["from_square"][0]][state["from_square"][1]] = state["moved_piece"]
+            self.board[state["to_square"][0]][state["to_square"][1]] = None
+            self.board[state["ep_capture_sq"][0]][state["ep_capture_sq"][1]] = state["captured_piece"]
+        else:
+            self.board[state["from_square"][0]][state["from_square"][1]] = state["moved_piece"]
+            self.board[state["to_square"][0]][state["to_square"][1]] = state["captured_piece"]
+
+        self.en_passant_square = state["prev_en_passant"]
+        self.castling_rights = state["prev_castling_rights"]
+        self.halfmove_clock = state["prev_halfmove_clock"]
+        self.move_clock = state["prev_move_clock"]
+        self.turn = state["prev_turn"]
+        self.position_history = self.position_history[:state["history_len"]]
+
     def make_move(self, from_square, to_square):
         place_1 = self.board[from_square[0]][from_square[1]] 
         place_2 = self.board[to_square[0]][to_square[1]]
@@ -293,6 +339,28 @@ class Board:
         else: 
             print("Illegal move")
  
+    def check(self):
+        moves = []
+        pieces = []
+        insufficient = [{("king", "black"), ("king", "white")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "black"), ("knight", "white")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("knight", "black")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("bishop", "black")}, 
+                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "black")}, 
+                        {("king", "black"), ("king", "white"), ("knight", "black"), ("knight", "black")},
+                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "white")}]
+        for i in range(8):
+            for j, a in enumerate(self.board[i]):
+                if a is not None and a.color == self.turn:
+                    moves += self.legal_moves((i, j))
+                if a is not None:
+                    pieces.append((a.name, a.color))
+        if not moves and self.is_in_check(self.turn):
+            print("You got checkmated bro")
+            return True
+        elif not moves:
+            print("Stalemate bro")
+            return True
     def is_game_over(self):
         moves = []
         pieces = []
@@ -409,12 +477,11 @@ class Board:
                     score -= points[i.name]
         return score
     
-    def minimax(self, depth):
+    def minimax(self, depth, alpha = -10**10, beta = 10**10):
         moves = []
-        if depth == 0 or self.is_game_over():
+        if depth == 0 or self.check():
             return self.evaluate()
-        else:
-            scores = {} 
+        else: 
             for a in range(8):
                 for j, i in enumerate(self.board[a]):
                     if i is None:
@@ -422,26 +489,26 @@ class Board:
                     else:
                         if i.color == self.turn:
                             for q in self.legal_moves((a, j)):
-                                saved_board = copy.deepcopy(self.board)
-                                saved_castling = copy.deepcopy(self.castling_rights)
-                                saved_ep = self.en_passant_square
-                                saved_halfmove = self.halfmove_clock
-                                saved_clock = self.move_clock
-                                saved_turn = self.turn
+                                state = self.save_move_state((a, j), q)
                                 self.make_move((a, j), q)
-                                scores[q] = self.minimax(depth-1)
-                                self.board = copy.deepcopy(saved_board)
-                                self.castling_rights = saved_castling
-                                self.en_passant_square = saved_ep
-                                self.halfmove_clock = saved_halfmove
-                                self.move_clock = saved_clock
-                                self.turn = saved_turn
+                                score = self.minimax(depth-1, alpha, beta)
+                                self.undo_move(state)
+                                if self.turn == "white":
+                                    if score > alpha:
+                                        alpha = score
+                                    if beta <= alpha:
+                                        break
+                                else:
+                                    if score < beta:
+                                        beta = score
+                                    if beta <= alpha:
+                                        break 
         if self.turn == "white":
-            return max(scores.values())
+            return alpha
         else:
-            return min(scores.values())
+            return beta
 
-    def best_move(self, depth):
+    def best_move(self, depth, alpha = -10**10, beta = 10**10):
         scores = {}
         for a in range(8):
                 for j, i in enumerate(self.board[a]):
@@ -450,24 +517,14 @@ class Board:
                     else:
                         if i.color == self.turn:
                             for q in self.legal_moves((a, j)):
-                                saved_board = copy.deepcopy(self.board)
-                                saved_castling = copy.deepcopy(self.castling_rights)
-                                saved_ep = self.en_passant_square
-                                saved_halfmove = self.halfmove_clock
-                                saved_clock = self.move_clock
-                                saved_turn = self.turn
+                                state = self.save_move_state((a, j), q)
                                 self.make_move((a, j), q)
-                                scores[((a,j), q)] = self.minimax(depth-1)
-                                self.board = copy.deepcopy(saved_board)
-                                self.castling_rights = saved_castling
-                                self.en_passant_square = saved_ep
-                                self.halfmove_clock = saved_halfmove
-                                self.move_clock = saved_clock
-                                self.turn = saved_turn
+                                scores[((a,j), q)] = self.minimax(depth-1, alpha, beta)
+                                self.undo_move(state)
         if self.turn == "white":
             return max(scores, key = scores.get)
         else:
             return min(scores, key = scores.get)
 
 man = Board()
-man.play_engine(2)
+man.play_engine(3)
