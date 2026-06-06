@@ -2,6 +2,7 @@ import chess
 import math
 import copy
 from collections import Counter
+from flask import Flask, jsonify, request
 
 class Piece:
     def __init__(self, name, color):
@@ -457,6 +458,21 @@ class Board:
                             row.append(i.name[0])
             print(" ".join(row))
 
+    def to_json(self):
+        state = {}
+        state["board"] = []
+        state["turn"] =  self.turn
+        state["game_over"] = self.is_game_over()
+        for a in range(8):
+            temp = []
+            for i in self.board[a]:
+                if i is None:
+                    temp.append(None)
+                else:
+                    temp.append({"name" : i.name, "color" : i.color})
+            state["board"].append(temp)
+        return state
+
     def evaluate(self):
         score = 0
         points = {
@@ -525,6 +541,27 @@ class Board:
             return max(scores, key = scores.get)
         else:
             return min(scores, key = scores.get)
+board = Board()
+app = Flask(__name__)
 
-man = Board()
-man.play_engine(3)
+@app.route('/state', methods=['GET'])
+
+def get_state():
+    return jsonify(board.to_json())
+
+@app.route('/move', methods=['POST'])
+
+def moving():
+    data = request.get_json()
+    from_square = data['from_square']
+    to_square = data["to_square"]
+    board.make_move(from_square, to_square)
+    move = board.best_move(depth=3)
+    board.make_move(move[0], move[1])
+
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
+
+if __name__ == '__main__':
+    app.run(debug=True)
