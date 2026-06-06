@@ -202,7 +202,11 @@ class Board:
                     if square in self.queen_move((i, j)):
                         return True
                 if a.name == "pawn":
-                    if square in self.pawn_move((i, j)):
+                    if a.color == "white":
+                        pawn_attacks = [(i-1, j-1), (i-1, j+1)]
+                    else:
+                        pawn_attacks = [(i+1, j-1), (i+1, j+1)]
+                    if square in pawn_attacks:
                         return True
                 if a.name == "knight":
                     if square in self.knight_move((i, j)):
@@ -213,6 +217,7 @@ class Board:
                         current = (i + p[0], j + p[1])
                         if 0 <= current[0] < 8 and 0 <= current[1] < 8 and current == square:
                             return True      
+        return False
                             
     def is_in_check(self, color):
         for i in range(8):
@@ -221,6 +226,7 @@ class Board:
                     continue 
                 if a.name == "king" and a.color == color:
                     return self.is_attacked((i, j), color)
+        return False
     
     def legal_moves(self, square):
         moves = []
@@ -231,12 +237,17 @@ class Board:
             state = self.save_move_state(square, i)
             self.board[i[0]][i[1]] = self.board[square[0]][square[1]]
             self.board[square[0]][square[1]] = None
+            if state["is_en_passant"]:
+                capture_sq = state["ep_capture_sq"]
+                self.board[capture_sq[0]][capture_sq[1]] = None
             if not self.is_in_check(self.board[i[0]][i[1]].color):
                 moves.append(i)
             self.undo_move(state)
         return moves
     
     def save_move_state(self, from_square, to_square):
+        from_square = tuple(from_square)
+        to_square = tuple(to_square)
         piece = self.board[from_square[0]][from_square[1]]
         state = {
             "from_square": from_square,
@@ -294,6 +305,8 @@ class Board:
         self.position_history = self.position_history[:state["history_len"]]
 
     def make_move(self, from_square, to_square):
+        from_square = tuple(from_square)
+        to_square = tuple(to_square)
         place_1 = self.board[from_square[0]][from_square[1]] 
         place_2 = self.board[to_square[0]][to_square[1]]
         moves = self.legal_moves(from_square)
@@ -310,6 +323,8 @@ class Board:
                     self.board[from_square[0]][7] = None
                 self.castling_rights[f"{place_1.color}_queenside"] = False
                 self.castling_rights[f"{place_1.color}_kingside"] = False
+                self.halfmove_clock += 1
+                self.en_passant_square = None
             else:
                 if place_1.name == "rook" and from_square[1] == 7:
                     self.castling_rights[f"{place_1.color}_kingside"] = False
@@ -339,6 +354,8 @@ class Board:
             self.position_history.append(self.board_string())
         else: 
             print("Illegal move")
+            return False
+        return True
  
     def check(self):
         moves = []
@@ -495,7 +512,7 @@ class Board:
     
     def minimax(self, depth, alpha = -10**10, beta = 10**10):
         moves = []
-        if depth == 0 or self.check():
+        if depth == 0 or self.is_game_over():
             return self.evaluate()
         else: 
             for a in range(8):
@@ -537,6 +554,8 @@ class Board:
                                 self.make_move((a, j), q)
                                 scores[((a,j), q)] = self.minimax(depth-1, alpha, beta)
                                 self.undo_move(state)
+        if not scores:
+            return None
         if self.turn == "white":
             return max(scores, key = scores.get)
         else:
@@ -550,14 +569,21 @@ def get_state():
     return jsonify(board.to_json())
 
 @app.route('/move', methods=['POST'])
-
 def moving():
     data = request.get_json()
     from_square = data['from_square']
-    to_square = data["to_square"]
+    to_square = data['to_square']
     board.make_move(from_square, to_square)
+    return jsonify(board.to_json())
+
+@app.route('/engine-move', methods=['POST'])
+def engine_move():
+    if board.is_game_over():
+        return jsonify(board.to_json())
     move = board.best_move(depth=3)
-    board.make_move(move[0], move[1])
+    if move is not None:
+        board.make_move(move[0], move[1])
+    return jsonify(board.to_json())
 
 @app.route('/')
 def index():

@@ -6,6 +6,9 @@
     <title>Chess</title>
 </head>
 <style>
+    body {
+        background-color: #383954;
+    }
     #board {
     display: grid;
     grid-template-columns: repeat(8, 100px);
@@ -17,6 +20,7 @@
 p {
     text-align: center;
     font-size: 100px;
+    color: white;
 }
 
 #board div {
@@ -25,7 +29,7 @@ p {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 36px;
+    font-size: 50px;
     cursor: pointer;
 }
 </style>
@@ -35,6 +39,11 @@ p {
 
     </div>
     <script>
+    const pieces = {
+    'white': { 'king': '♔', 'queen': '♕', 'rook': '♖', 'bishop': '♗', 'knight': '♘', 'pawn': '♙' },
+    'black': { 'king': '♚', 'queen': '♛', 'rook': '♜', 'bishop': '♝', 'knight': '♞', 'pawn': '♟' }
+};
+   let selectedSquare = null;
     function renderBoard(state) {
         const board = document.getElementById('board');
         board.innerHTML = '';
@@ -49,12 +58,38 @@ p {
                 if ( state.board[i][a] != null) {
                     const piece = state.board[i][a];
                     if (piece.color === "black") {
-                        div.textContent = piece.name === 'knight' ? 'n' : piece.name[0];
+                        div.textContent = pieces["black"][piece.name];
                     } else {
-                        div.textContent = piece.name === 'knight' ? 'N' : piece.name[0].toUpperCase();
+                        div.textContent = pieces["white"][piece.name];
                     }
                 }
                 board.appendChild(div)
+                const row = i;
+                const col = a;
+                div.addEventListener('click', () => {
+                    if (selectedSquare === null) {
+                        selectedSquare = [row, col];
+                    } else {
+                        fetch('/move', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ from_square: selectedSquare, to_square: [row, col] })
+                        })
+                        .then(r => r.json())
+                        .then(state => {
+                            renderBoard(state);
+                            selectedSquare = null;
+                            if (!state.game_over) {
+                                return fetch('/engine-move', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                })
+                                .then(r => r.json())
+                                .then(engineState => renderBoard(engineState));
+                            }
+                        });
+                    }
+                });
             }
         }
 }
