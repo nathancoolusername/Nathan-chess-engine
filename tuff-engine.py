@@ -186,21 +186,34 @@ class Board:
         return moves
     
     def is_attacked(self, square, color):
+        def path_clear(start, end, step):
+            current = (start[0] + step[0], start[1] + step[1])
+            while current != end:
+                if self.board[current[0]][current[1]] is not None:
+                    return False
+                current = (current[0] + step[0], current[1] + step[1])
+            return True
+
         for i in range(8):
             for j, a in enumerate(self.board[i]):
-                if a is None:
+                if a is None or a.color != color:
                     continue
-                if a.color != color:
-                    continue
-                if a.name == "rook":
-                    if square in self.rook_move((i, j)):
-                        return True
-                if a.name == "bishop":
-                    if square in self.bishop_move((i, j)):
-                        return True
-                if a.name == "queen":
-                    if square in self.queen_move((i, j)):
-                        return True
+                dr = square[0] - i
+                dc = square[1] - j
+                if a.name == "rook" or a.name == "queen":
+                    if dr == 0 and dc != 0:
+                        step = (0, 1 if dc > 0 else -1)
+                        if path_clear((i, j), square, step):
+                            return True
+                    if dc == 0 and dr != 0:
+                        step = (1 if dr > 0 else -1, 0)
+                        if path_clear((i, j), square, step):
+                            return True
+                if a.name == "bishop" or a.name == "queen":
+                    if abs(dr) == abs(dc) and dr != 0:
+                        step = (1 if dr > 0 else -1, 1 if dc > 0 else -1)
+                        if path_clear((i, j), square, step):
+                            return True
                 if a.name == "pawn":
                     if a.color == "white":
                         pawn_attacks = [(i-1, j-1), (i-1, j+1)]
@@ -209,23 +222,21 @@ class Board:
                     if square in pawn_attacks:
                         return True
                 if a.name == "knight":
-                    if square in self.knight_move((i, j)):
+                    if (abs(dr), abs(dc)) in [(1, 2), (2, 1)]:
                         return True
                 if a.name == "king":
-                    directions = [(1,0), (0, 1), (-1, 0), (0, -1), (1,1), (-1, -1), (1, -1), (-1, 1)]
-                    for p in directions:
-                        current = (i + p[0], j + p[1])
-                        if 0 <= current[0] < 8 and 0 <= current[1] < 8 and current == square:
-                            return True      
+                    if max(abs(dr), abs(dc)) == 1:
+                        return True
         return False
                             
     def is_in_check(self, color):
+        opponent = "black" if color == "white" else "white"
         for i in range(8):
             for j, a in enumerate(self.board[i]):
-                if a == None:
-                    continue 
+                if a is None:
+                    continue
                 if a.name == "king" and a.color == color:
-                    return self.is_attacked((i, j), color)
+                    return self.is_attacked((i, j), opponent)
         return False
     
     def legal_moves(self, square):
@@ -585,9 +596,22 @@ def engine_move():
         board.make_move(move[0], move[1])
     return jsonify(board.to_json())
 
+@app.route("/options", methods=["POST"])
+def get_moves():
+    data = request.get_json()
+    from_square = data
+    moves = board.legal_moves(from_square)
+    return jsonify(moves)
+
 @app.route('/')
 def index():
     return app.send_static_file('index.html')
+
+@app.route("/reset", methods=["POST"])
+def reset():
+    global board
+    board = Board()
+    return jsonify(board.to_json())
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -32,9 +32,19 @@ p {
     font-size: 50px;
     cursor: pointer;
 }
+
+button {
+    border-radius: 10px;
+    border: transparent;
+    margin: 0 auto;
+    font-size: 50px;
+    justify-self: center;
+    display: block;
+}
 </style>
 <body>
     <p>Chess</p>
+    <button onclick="resetGame()">New Game</button>
     <div id="board">
 
     </div>
@@ -44,12 +54,16 @@ p {
     'black': { 'king': '♚', 'queen': '♛', 'rook': '♜', 'bishop': '♝', 'knight': '♞', 'pawn': '♟' }
 };
    let selectedSquare = null;
+   let options = [];
     function renderBoard(state) {
         const board = document.getElementById('board');
         board.innerHTML = '';
         for (let i = 0; i < state.board.length; i++) {
             for (let a = 0; a < state.board[i].length; a++) {
                 div = document.createElement("div");
+                const thus = i;
+                const that = a;
+                div.classList.add(`square-${thus}-${that}`);
                 if ((i + a) % 2 == 0) {
                     div.style.backgroundColor = "#fbc273";
                 } else {
@@ -68,8 +82,45 @@ p {
                 const col = a;
                 div.addEventListener('click', () => {
                     if (selectedSquare === null) {
+                        const piece = state.board[row][col];
+                        if (!piece || piece.color !== state.turn) {
+                            return;
+                        }
                         selectedSquare = [row, col];
+                        fetch("/options", {
+                            method : "POST",
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(selectedSquare)
+                        })
+                        .then(r => r.json())
+                        .then(moves => {
+                            console.log(moves);
+                            options = moves;
+                            for (const element of moves) {
+                                const cls = `square-${element[0]}-${element[1]}`;
+                                const target = document.getElementsByClassName(cls)[0];
+                                if (target) {
+                                    target.style.backgroundColor = "#ace3bb";
+                                }
+                            }
+                        })
                     } else {
+                        const isLegal = options.some(m => m[0] === row && m[1] === col);
+                        if (!isLegal) {
+                            selectedSquare = null;
+                            for (const element of options) {
+                                const cls = `square-${element[0]}-${element[1]}`;
+                                const target = document.getElementsByClassName(cls)[0];
+                                if (!target) continue;
+                                if ((element[0] + element[1]) % 2 == 0) {
+                                    target.style.backgroundColor = "#fbc273";
+                                } else {
+                                    target.style.backgroundColor = "#95533b";
+                                }
+                            }
+                            options = [];
+                            return;
+                        }
                         fetch('/move', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -77,6 +128,7 @@ p {
                         })
                         .then(r => r.json())
                         .then(state => {
+                            options = [];
                             renderBoard(state);
                             selectedSquare = null;
                             if (!state.game_over) {
@@ -92,6 +144,15 @@ p {
                 });
             }
         }
+}
+function resetGame() {
+    fetch('/reset', { method: 'POST' })
+        .then(r => r.json())
+        .then(state => {
+            selectedSquare = null;
+            options = [];
+            renderBoard(state);
+        });
 }
     fetch('/state')
         .then(r => r.json())
