@@ -18,7 +18,8 @@ Alpha-beta pruning is used to reduce the number of positions evaluated therefore
 
  Demo
 
-*(Add a GIF or screenshot here — this is huge for impact)*
+<img width="800" height="445" alt="ScreenRecording2026-06-08at22 41 54-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/208cf14a-e2c0-4ddf-91f8-5a06b905f1cc" />
+
 
 Installation
 
