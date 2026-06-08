@@ -15,6 +15,7 @@
     width: 800px;
     margin: auto;
     margin-top: 100px;
+    position: relative;
 }
 
 p {
@@ -142,6 +143,25 @@ button {
                         });
                     }
                 });
+                if (state.game_over) {
+                    const gameOver = document.createElement("div");
+                    if (state.turn === "white") {
+                       gameOver.textContent = "You lost buddy"; 
+                    } else {
+                        gameOver.textContent = "You won??";
+                    }
+                    gameOver.style.position = "absolute";
+                    gameOver.style.left = "50%";
+                    gameOver.style.transform = "translateX(-50%)";
+                    gameOver.style.top = "50%";
+                    gameOver.style.zIndex = "999";
+                    gameOver.style.fontSize = "100px";
+                    gameOver.style.color = "#fff";
+                    gameOver.style.backgroundColor = "#383954";
+                    gameOver.style.height = "Auto";
+                    gameOver.style.width = "Auto";
+                    board.appendChild(gameOver);
+                }
             }
         }
 }

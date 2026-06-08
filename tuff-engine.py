@@ -344,7 +344,7 @@ class Board:
                 if place_1.name == "pawn" and abs(to_square[0]-from_square[0]) == 2:
                     self.en_passant_square = (to_square[0]-1, to_square[1]) if place_1.color == "black" else (to_square[0]+1, to_square[1])
                 else:
-                    if to_square == self.en_passant_square:
+                    if place_1.name == "pawn" and to_square == self.en_passant_square:
                         if place_1.color == "white":
                             self.board[to_square[0]+1][to_square[1]] = None
                         else:
