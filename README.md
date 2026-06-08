@@ -27,7 +27,7 @@ Installation
 git clone https://github.com/nathancoolusername/Nathan-chess-engine.git
 cd Nathan-chess-engine
 pip install -r requirements.txt
-python app.py
+python tuff-engine.py
 ```
 Documentation
 
