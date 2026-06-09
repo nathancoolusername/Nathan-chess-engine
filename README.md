@@ -23,11 +23,14 @@ Alpha-beta pruning is used to reduce the number of positions evaluated therefore
 Engine Details (at this moment)
 
 Search algorithm: Minimax
-Optimization: Alpha-beta pruning
+Optimization: Alpha-beta pruning, transposition table + Zoobrist hashing
 Search depth: default 3 (variable)
 
 Evaluation factors:
 - Material balance
+- Checkmates
+- Mobility
+- piece square values
 
 Installation
 
@@ -44,7 +47,6 @@ Full technical documentation:
 
 Future Improvements
 
-* Add transposition tables
 * Improve and customize evaluation function
 * Optimize move generation
 * Increase search depth
