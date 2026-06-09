@@ -1,13 +1,125 @@
-from collections import Counter
 from flask import Flask, jsonify, request
+import random 
+
+class Zoobrist:
+    def __init__(self):
+        self.table = {}
+        pieces = ['P', 'N', 'B', 'R', 'Q', 'K', 'p', 'n', 'b', 'r', 'q', 'k']
+        for square in range(8):
+            for j in range(8):
+                for piece in pieces:
+                    self.table[((square, j), piece)] = random.getrandbits(64)
+        self.table["turn"] = random.getrandbits(64)
+        self.table["wK"] = random.getrandbits(64)
+        self.table["bK"] = random.getrandbits(64)
+        self.table["wQ"] = random.getrandbits(64)
+        self.table["bQ"]= random.getrandbits(64)
+        self.table[(5, 0)] = random.getrandbits(64)
+        self.table[(5, 1)] = random.getrandbits(64)
+        self.table[(5, 2)] = random.getrandbits(64)
+        self.table[(5, 3)] = random.getrandbits(64)
+        self.table[(5, 4)] = random.getrandbits(64)
+        self.table[(5, 5)] = random.getrandbits(64)
+        self.table[(5, 6)] = random.getrandbits(64)
+        self.table[(5, 7)] = random.getrandbits(64)
+        self.table[(2, 0)] = random.getrandbits(64)
+        self.table[(2, 1)] = random.getrandbits(64)
+        self.table[(2, 2)] = random.getrandbits(64)
+        self.table[(2, 3)] = random.getrandbits(64)
+        self.table[(2, 4)] = random.getrandbits(64)
+        self.table[(2, 5)] = random.getrandbits(64)
+        self.table[(2, 6)] = random.getrandbits(64)
+        self.table[(2, 7)] = random.getrandbits(64)
+    
+    def make_hash(self, board, turn, castling, en_passant, board_hash = 0):
+        for a in range(8):
+            for p, q in enumerate(board[a]):
+                if q is not None and q.color == "white":
+                    if q.name == "knight":
+                        board_hash ^= self.table[((a, p), "n")]
+                    else:
+                        board_hash ^= self.table[((a, p), q.name[0])]
+                if q is not None and q.color == "black":
+                    if q.name == "knight":
+                        board_hash ^= self.table[((a, p), "N")]
+                    else:
+                        board_hash ^= self.table[((a, p), q.name[0].capitalize())]
+        if castling["white_kingside"]:
+            board_hash ^= self.table["wK"]
+        if castling["black_kingside"]:
+            board_hash ^= self.table["bK"]
+        if castling["white_queenside"]:
+            board_hash ^= self.table["wQ"]
+        if castling["black_queenside"]:
+            board_hash ^= self.table["bQ"]
+        if turn == "white":
+            board_hash ^= self.table["turn"]
+        if en_passant is not None:
+            board_hash ^= self.table[en_passant]
+        return board_hash
+    
+    def update_hash(self, current_hash, where1, where2, piece1, piece2, en_passant, piece3 = False):
+        if piece1.color == "white":
+            if piece1.name == "knight":
+                current_hash ^= self.table[(where1, "n")]
+                current_hash ^= self.table[(where2, "n")]
+            else:
+                current_hash ^= self.table[(where1, piece1.name[0])]
+                if not piece3:
+                    current_hash ^= self.table[(where2, piece1.name[0])]
+                else:
+                    current_hash ^= self.table[where2, "q"]
+        else:
+            if piece1.name == "knight":
+                current_hash ^= self.table[(where1, "N")]
+                current_hash ^= self.table[(where2, "N")]
+            else:
+                current_hash ^= self.table[(where1, piece1.name[0].capitalize())]
+                if not piece3:
+                    current_hash ^= self.table[(where2, piece1.name[0].capitalize())]
+                else:
+                    current_hash ^= self.table[where2, "Q"]
+        if piece2 and piece2.color == "white":
+            if piece2.name == "knight":
+                current_hash ^= self.table[(where2, "n")]
+            elif piece1.name == "pawn" and where2 == en_passant:
+                current_hash ^= self.table[(en_passant)]
+                current_hash ^= self.table[((where2[0]+1, where2[1]), "P")]
+            else:
+                current_hash ^= self.table[(where2, piece2.name[0])]
+        if piece2 and piece2.color == "black":
+            if piece2.name == "knight":
+                current_hash ^= self.table[(where2, "N")]
+            elif piece1.name == "pawn" and where2 == en_passant:
+                current_hash ^= self.table[(en_passant)]
+                current_hash ^= self.table[((where2[0]-1, where2[1]), "p")]
+            else:
+                current_hash ^= self.table[(where2, piece2.name[0].capitalize())]
+        if (piece1.name == "king" and abs(where1[1] - where2[1]) == 2) or (piece1.name == "rook" or (piece2 and piece2.name == "rook")):
+            if piece1.color == "white":
+                current_hash ^= self.table["wK"]
+                current_hash ^= self.table["wQ"]
+            else:
+                current_hash ^= self.table["bK"]
+                current_hash ^= self.table["bQ"]
+        current_hash ^= self.table["turn"]
+        if en_passant:
+            current_hash ^= self.table[(en_passant)]
+        return current_hash
+
 
 class Piece:
+    # Basic piece information class
     def __init__(self, name, color):
         self.color = color
         self.name = name
 
 class Board:
+
+    # Initiates the board (2D array), adds pieces, and declares default information like the starting turn
+
     def __init__(self):
+        self.hash_table = Zoobrist()
         back_rank = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
         self.board = [[], [], [], [], [], [], [], []]
         a = 0
@@ -27,6 +139,15 @@ class Board:
             else:
                 for _ in range(8):
                     self.board[a].append(None)
+        self.points = {
+            "king" : 0,
+            "queen" : 900,
+            "bishop" : 300,
+            "knight" : 300,
+            "rook" : 500,
+            "pawn" : 100
+            }
+        self.phase = "Mid"
         self.turn = "white"
         self.castling_rights = {
             "white_kingside" :True,
@@ -36,9 +157,78 @@ class Board:
         }
         self.en_passant_square = None
         self.move_clock = 0
-        self.halfmove_clock = 0  
-        self.position_history = [self.board_string()]
+        self.halfmove_clock = 0
+        self.current_hash = self.hash_table.make_hash(self.board, self.turn, self.castling_rights, self.en_passant_square)
+        self.hash_history = [self.current_hash]
+        self.hash_count = {self.current_hash : 1}
+        self.tsp = {}
+        self.piece_square_values = {"pawn" : [[0, 0, 0, 0, 0, 0, 0, 0], 
+                                              [50, 50, 50, 50, 50, 50, 50, 50], 
+                                              [10, 10, 20, 30, 30, 20, 10, 10], 
+                                              [5,  5, 10, 25, 25, 10,  5,  5], 
+                                              [0,  0,  0, 20, 20,  0,  0,  0], 
+                                              [5, -5,-10,  0,  0,-10, -5,  5], 
+                                              [5, 10, 10,-20,-20, 10, 10,  5], 
+                                              [0,  0,  0,  0,  0,  0,  0,  0]],
+                                    "knight": [[-50,-40,-30,-30,-30,-30,-40,-50], 
+                                              [-40,-20,  0,  0,  0,  0,-20,-40], 
+                                              [-30,  0, 10, 15, 15, 10,  0,-30], 
+                                              [-30,  5, 15, 20, 20, 15,  5,-30], 
+                                              [-30,  0, 15, 20, 20, 15,  0,-30], 
+                                              [-30,  5, 10, 15, 15, 10,  5,-30], 
+                                              [-40,-20,  0,  5,  5,  0,-20,-40], 
+                                              [-50,-40,-30,-30,-30,-30,-40,-50]],
+                                    "bishop": [[-20,-10,-10,-10,-10,-10,-10,-20], 
+                                              [-10,  0,  0,  0,  0,  0,  0,-10], 
+                                              [-10,  0,  5, 10, 10,  5,  0,-10], 
+                                              [-10,  5,  5, 10, 10,  5,  5,-10], 
+                                              [-10,  0, 10, 10, 10, 10,  0,-10], 
+                                              [-10, 10, 10, 10, 10, 10, 10,-10], 
+                                              [-10,  5,  0,  0,  0,  0,  5,-10], 
+                                              [-20,-10,-10,-10,-10,-10,-10,-20]], 
+                                    "rook": [[  0,  0,  0,  0,  0,  0,  0,  0], 
+                                              [ 5, 10, 10, 10, 10, 10, 10,  5], 
+                                              [ -5,  0,  0,  0,  0,  0,  0, -5], 
+                                              [ -5,  0,  0,  0,  0,  0,  0, -5], 
+                                              [ -5,  0,  0,  0,  0,  0,  0, -5], 
+                                              [ -5,  0,  0,  0,  0,  0,  0, -5], 
+                                              [ -5,  0,  0,  0,  0,  0,  0, -5], 
+                                              [  0,  0,  0,  5,  5,  0,  0,  0]],
+                                    "queen":[[-20,-10,-10, -5, -5,-10,-10,-20], 
+                                              [-10,  0,  0,  0,  0,  0,  0,-10], 
+                                              [ -10,  0,  5,  5,  5,  5,  0,-10], 
+                                              [ -5,  0,  5,  5,  5,  5,  0, -5], 
+                                              [  0,  0,  5,  5,  5,  5,  0, -5], 
+                                              [-10,  5,  5,  5,  5,  5,  0,-10], 
+                                              [-10,  0,  5,  0,  0,  0,  0,-10], 
+                                              [-20,-10,-10, -5, -5,-10,-10,-20]],
+                                    "kingMid":[[-30,-40,-40,-50,-50,-40,-40,-30], 
+                                              [-30,-40,-40,-50,-50,-40,-40,-30], 
+                                              [-30,-40,-40,-50,-50,-40,-40,-30], 
+                                              [-30,-40,-40,-50,-50,-40,-40,-30], 
+                                              [-20,-30,-30,-40,-40,-30,-30,-20], 
+                                              [-10,-20,-20,-20,-20,-20,-20,-10], 
+                                              [ 20, 20,  0,  0,  0,  0, 20, 20], 
+                                              [20, 30, 10,  0,  0, 10, 30, 20]], 
+                                    "kingEnd":[[-50,-40,-30,-20,-20,-30,-40,-50], 
+                                              [-30,-20,-10,  0,  0,-10,-20,-30], 
+                                              [-30,-10, 20, 30, 30, 20,-10,-30], 
+                                              [-30,-10, 30, 40, 40, 30,-10,-30], 
+                                              [-30,-10, 30, 40, 40, 30,-10,-30], 
+                                              [-30,-10, 20, 30, 30, 20,-10,-30], 
+                                              [-30,-30,  0,  0,  0,  0,-30,-30], 
+                                              [-50,-30,-30,-30,-30,-30,-30,-50]]
+                                              }
+        self.insufficient = [{("king", "black"), ("king", "white")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "black"), ("knight", "white")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("knight", "black")}, 
+                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("bishop", "black")}, 
+                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "black")}, 
+                        {("king", "black"), ("king", "white"), ("knight", "black"), ("knight", "black")},
+                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "white")}]
     
+    # Collects all the possible moves (legal and illegal) for the piece on the selected square
+
     def get_moves(self, where):
         if where is None or self.board[where[0]][where[1]] is None:
             return []
@@ -242,139 +432,123 @@ class Board:
         if everything == []:
             return []
         for i in everything:
-            state = self.save_move_state(square, i)
+            state = self.save_move_state()
             self.board[i[0]][i[1]] = self.board[square[0]][square[1]]
             self.board[square[0]][square[1]] = None
-            if state["is_en_passant"]:
-                capture_sq = state["ep_capture_sq"]
+            if self.en_passant_square is not None and self.board[i[0]][i[1]].name == "pawn" and i == self.en_passant_square:
+                capture_sq = (i[0] + 1, i[1]) if self.board[i[0]][i[1]].color == "white" else (i[0] - 1, i[1])
                 self.board[capture_sq[0]][capture_sq[1]] = None
             if not self.is_in_check(self.board[i[0]][i[1]].color):
                 moves.append(i)
             self.undo_move(state)
         return moves
     
-    def save_move_state(self, from_square, to_square):
-        from_square = tuple(from_square)
-        to_square = tuple(to_square)
-        piece = self.board[from_square[0]][from_square[1]]
-        state = {
-            "from_square": from_square,
-            "to_square": to_square,
-            "moved_piece": piece,
-            "captured_piece": self.board[to_square[0]][to_square[1]],
-            "prev_en_passant": self.en_passant_square,
-            "prev_castling_rights": self.castling_rights.copy(),
-            "prev_halfmove_clock": self.halfmove_clock,
-            "prev_move_clock": self.move_clock,
-            "prev_turn": self.turn,
-            "history_len": len(self.position_history),
-            "is_castle": piece.name == "king" and abs(from_square[1] - to_square[1]) == 2,
-            "is_en_passant": piece.name == "pawn" and to_square == self.en_passant_square,
-            "is_promotion": piece.name == "pawn" and to_square[0] in (0, 7),
+    def save_move_state(self):
+        return {
+            "board": [row[:] for row in self.board],
+            "turn": self.turn,
+            "castling_rights": self.castling_rights.copy(),
+            "en_passant_square": self.en_passant_square,
+            "halfmove_clock": self.halfmove_clock,
+            "move_clock": self.move_clock,
+            "current_hash": self.current_hash,
+            "hash_history": list(self.hash_history),
+            "hash_count": dict(self.hash_count),
         }
 
-        if state["is_castle"]:
-            rook_from = (from_square[0], 7 if to_square[1] > from_square[1] else 0)
-            rook_to = (from_square[0], 5 if to_square[1] > from_square[1] else 3)
-            state["rook_from"] = rook_from
-            state["rook_to"] = rook_to
-            state["rook_piece"] = self.board[rook_from[0]][rook_from[1]]
-
-        if state["is_en_passant"]:
-            capture_sq = (
-                (to_square[0] + 1, to_square[1])
-                if piece.color == "white"
-                else (to_square[0] - 1, to_square[1])
-            )
-            state["ep_capture_sq"] = capture_sq
-            state["captured_piece"] = self.board[capture_sq[0]][capture_sq[1]]
-
-        return state
-    
     def undo_move(self, state):
-        if state["is_castle"]:
-            self.board[state["from_square"][0]][state["from_square"][1]] = state["moved_piece"]
-            self.board[state["to_square"][0]][state["to_square"][1]] = None
-            self.board[state["rook_from"][0]][state["rook_from"][1]] = state["rook_piece"]
-            self.board[state["rook_to"][0]][state["rook_to"][1]] = None
-        elif state["is_en_passant"]:
-            self.board[state["from_square"][0]][state["from_square"][1]] = state["moved_piece"]
-            self.board[state["to_square"][0]][state["to_square"][1]] = None
-            self.board[state["ep_capture_sq"][0]][state["ep_capture_sq"][1]] = state["captured_piece"]
-        else:
-            self.board[state["from_square"][0]][state["from_square"][1]] = state["moved_piece"]
-            self.board[state["to_square"][0]][state["to_square"][1]] = state["captured_piece"]
-
-        self.en_passant_square = state["prev_en_passant"]
-        self.castling_rights = state["prev_castling_rights"]
-        self.halfmove_clock = state["prev_halfmove_clock"]
-        self.move_clock = state["prev_move_clock"]
-        self.turn = state["prev_turn"]
-        self.position_history = self.position_history[:state["history_len"]]
+        self.board = [row[:] for row in state["board"]]
+        self.turn = state["turn"]
+        self.castling_rights = state["castling_rights"]
+        self.en_passant_square = state["en_passant_square"]
+        self.halfmove_clock = state["halfmove_clock"]
+        self.move_clock = state["move_clock"]
+        self.current_hash = state["current_hash"]
+        self.hash_history = list(state["hash_history"])
+        self.hash_count = dict(state["hash_count"])
 
     def make_move(self, from_square, to_square):
         from_square = tuple(from_square)
         to_square = tuple(to_square)
-        place_1 = self.board[from_square[0]][from_square[1]] 
-        place_2 = self.board[to_square[0]][to_square[1]]
+        place_1 = self.board[from_square[0]][from_square[1]]
+        if place_1 is None:
+            return False
         moves = self.legal_moves(from_square)
-        turn = self.turn
-        if to_square in moves:
-            if place_1.name == "king" and abs(from_square[1] - to_square[1]) == 2:
-                self.board[to_square[0]][to_square[1]] = self.board[from_square[0]][from_square[1]]
-                self.board[from_square[0]][from_square[1]] = None
-                if from_square[1] > to_square[1]:
-                    self.board[from_square[0]][to_square[1]+1] = self.board[from_square[0]][0]
-                    self.board[from_square[0]][0] = None
-                else: 
-                    self.board[from_square[0]][to_square[1]-1] = self.board[from_square[0]][7]
-                    self.board[from_square[0]][7] = None
-                self.castling_rights[f"{place_1.color}_queenside"] = False
-                self.castling_rights[f"{place_1.color}_kingside"] = False
-                self.halfmove_clock += 1
-                self.en_passant_square = None
-            else:
-                if place_1.name == "rook" and from_square[1] == 7:
-                    self.castling_rights[f"{place_1.color}_kingside"] = False
-                if place_1.name == "rook" and from_square[1] == 0:
-                    self.castling_rights[f"{place_1.color}_queenside"] = False
-                if place_1.name == "pawn" and abs(to_square[0]-from_square[0]) == 2:
-                    self.en_passant_square = (to_square[0]-1, to_square[1]) if place_1.color == "black" else (to_square[0]+1, to_square[1])
-                else:
-                    if place_1.name == "pawn" and to_square == self.en_passant_square:
-                        if place_1.color == "white":
-                            self.board[to_square[0]+1][to_square[1]] = None
-                        else:
-                            self.board[to_square[0]-1][to_square[1]] = None
-                    self.en_passant_square = None
-                if place_1.name == "pawn" and (to_square[0] == 0 or to_square[0] == 7):
-                    self.board[to_square[0]][to_square[1]] = Piece("queen", place_1.color)
-                    self.board[from_square[0]][from_square[1]] = None
-                else:
-                    self.board[to_square[0]][to_square[1]] = self.board[from_square[0]][from_square[1]]
-                    self.board[from_square[0]][from_square[1]] = None
-                if place_2 == None and place_1.name != "pawn":
-                    self.halfmove_clock += 1
-                else:
-                    self.halfmove_clock = 0
-            self.move_clock += 1
-            self.turn = "black" if turn == "white" else "white"
-            self.position_history.append(self.board_string())
-        else: 
+        if to_square not in moves:
             print("Illegal move")
             return False
+
+        place_2 = self.board[to_square[0]][to_square[1]]
+
+        if place_1.name == "king":
+            self.castling_rights[f"{place_1.color}_kingside"] = False
+            self.castling_rights[f"{place_1.color}_queenside"] = False
+        elif place_1.name == "rook":
+            if from_square == (7, 7):
+                self.castling_rights["white_kingside"] = False
+            elif from_square == (7, 0):
+                self.castling_rights["white_queenside"] = False
+            elif from_square == (0, 7):
+                self.castling_rights["black_kingside"] = False
+            elif from_square == (0, 0):
+                self.castling_rights["black_queenside"] = False
+
+        if place_2 is not None and place_2.name == "rook":
+            if to_square == (7, 7):
+                self.castling_rights["white_kingside"] = False
+            elif to_square == (7, 0):
+                self.castling_rights["white_queenside"] = False
+            elif to_square == (0, 7):
+                self.castling_rights["black_kingside"] = False
+            elif to_square == (0, 0):
+                self.castling_rights["black_queenside"] = False
+
+        if place_1.name == "king" and abs(from_square[1] - to_square[1]) == 2:
+            self.board[to_square[0]][to_square[1]] = place_1
+            self.board[from_square[0]][from_square[1]] = None
+            if from_square[1] > to_square[1]:
+                self.board[from_square[0]][to_square[1] + 1] = self.board[from_square[0]][0]
+                self.board[from_square[0]][0] = None
+            else:
+                self.board[from_square[0]][to_square[1] - 1] = self.board[from_square[0]][7]
+                self.board[from_square[0]][7] = None
+            self.halfmove_clock += 1
+            self.en_passant_square = None
+        else:
+            if place_1.name == "pawn" and abs(to_square[0] - from_square[0]) == 2:
+                self.en_passant_square = ((from_square[0] + to_square[0]) // 2, to_square[1])
+            else:
+                if place_1.name == "pawn" and to_square == self.en_passant_square:
+                    capture_sq = (
+                        (to_square[0] + 1, to_square[1])
+                        if place_1.color == "white"
+                        else (to_square[0] - 1, to_square[1])
+                    )
+                    self.board[capture_sq[0]][capture_sq[1]] = None
+                self.en_passant_square = None
+
+            if place_1.name == "pawn" and to_square[0] in (0, 7):
+                self.board[to_square[0]][to_square[1]] = Piece("queen", place_1.color)
+                self.board[from_square[0]][from_square[1]] = None
+            else:
+                self.board[to_square[0]][to_square[1]] = place_1
+                self.board[from_square[0]][from_square[1]] = None
+
+            if place_2 is None and place_1.name != "pawn":
+                self.halfmove_clock += 1
+            else:
+                self.halfmove_clock = 0
+
+        self.move_clock += 1
+        self.turn = "black" if self.turn == "white" else "white"
+        self.current_hash = self.hash_table.make_hash(self.board, self.turn, self.castling_rights, self.en_passant_square)
+        self.hash_history.append(self.current_hash)
+        self.hash_count[self.current_hash] = self.hash_count.get(self.current_hash, 0) + 1
         return True
  
     def check(self):
         moves = []
         pieces = []
-        insufficient = [{("king", "black"), ("king", "white")}, 
-                        {("king", "black"), ("king", "white"), ("bishop", "black"), ("knight", "white")}, 
-                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("knight", "black")}, 
-                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("bishop", "black")}, 
-                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "black")}, 
-                        {("king", "black"), ("king", "white"), ("knight", "black"), ("knight", "black")},
-                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "white")}]
         for i in range(8):
             for j, a in enumerate(self.board[i]):
                 if a is not None and a.color == self.turn:
@@ -390,13 +564,6 @@ class Board:
     def is_game_over(self):
         moves = []
         pieces = []
-        insufficient = [{("king", "black"), ("king", "white")}, 
-                        {("king", "black"), ("king", "white"), ("bishop", "black"), ("knight", "white")}, 
-                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("knight", "black")}, 
-                        {("king", "black"), ("king", "white"), ("bishop", "white"), ("bishop", "black")}, 
-                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "black")}, 
-                        {("king", "black"), ("king", "white"), ("knight", "black"), ("knight", "black")},
-                        {("king", "black"), ("king", "white"), ("knight", "white"), ("knight", "white")}]
         for i in range(8):
             for j, a in enumerate(self.board[i]):
                 if a is not None and a.color == self.turn:
@@ -404,47 +571,54 @@ class Board:
                 if a is not None:
                     pieces.append((a.name, a.color))
         if not moves and self.is_in_check(self.turn):
-            print("You got checkmated bro")
             return True
         elif not moves:
-            print("Stalemate bro")
             return True
-        if self.halfmove_clock == 100:
-            print("Too passive --> Draw")
+        if self.halfmove_clock >= 100:
             return True
-        counts = Counter(self.position_history)
-        if any(c >= 3 for c in counts.values()):
-            print("Repeat Draw")
-            return True
-        if set(pieces) in insufficient :
-            print("not enough to win bro --> Draw")
+        for a in self.hash_count.values():
+            if a >= 3:
+                return True
+        if self.has_insufficient_material():
             return True
         return False
-        
-    def board_string(self):
-        string = ""
+
+    def has_insufficient_material(self):
+        white = []
+        black = []
+        for row in self.board:
+            for piece in row:
+                if piece is None or piece.name == "king":
+                    continue
+                if piece.color == "white":
+                    white.append(piece.name)
+                else:
+                    black.append(piece.name)
+        if not white and not black:
+            return True
+        if not white and black in (["bishop"], ["knight"]):
+            return True
+        if not black and white in (["bishop"], ["knight"]):
+            return True
+        if white == ["bishop"] and black == ["bishop"]:
+            return True
+        return False
+
+    def is_checkmate(self):
         for i in range(8):
             for j, a in enumerate(self.board[i]):
-                if a is None:
-                    string += "."
-                    continue
-                if a.color == "white":
-                    if a.name == "knight":
-                        string += "N"
-                    else:
-                        string += a.name[0].capitalize()
-                else:
-                    if a.name == "knight":
-                        string += "n"
-                    else:
-                        string += a.name[0]
-        string += "-" if self.en_passant_square is None else f"{self.en_passant_square}"
-        string += "+" if self.turn == "black" else ";"
-        string += "1" if self.castling_rights["white_kingside"] else "2"
-        string += "3" if self.castling_rights["white_queenside"] else "4"
-        string += "5" if self.castling_rights["black_kingside"] else "6"
-        string += "7" if self.castling_rights["black_queenside"] else "8"
-        return string
+                if a is not None and a.color == self.turn:
+                    if self.legal_moves((i, j)):
+                        return False
+        return self.is_in_check(self.turn)
+
+    def is_stalemate(self):
+        for i in range(8):
+            for j, a in enumerate(self.board[i]):
+                if a is not None and a.color == self.turn:
+                    if self.legal_moves((i, j)):
+                        return False
+        return not self.is_in_check(self.turn)
 
     def play_alone(self):
         while not self.is_game_over():
@@ -497,57 +671,83 @@ class Board:
                     temp.append({"name" : i.name, "color" : i.color})
             state["board"].append(temp)
         return state
-
+    
+    def game_phase(self):
+        piece_count = 0
+        if self.phase == "Mid":
+            for a in range(8):
+                for i in self.board[a]:
+                    if i is not None:
+                        piece_count += self.points[i.name]
+        if piece_count < 14 : 
+            self.phase = "End"
+                       
     def evaluate(self):
+        self.game_phase()
         score = 0
-        points = {
-            "king" : 0,
-            "queen" : 9,
-            "bishop" : 3,
-            "knight" : 3,
-            "rook" : 5,
-            "pawn" : 1
-        }
+        moves_black = 0
+        moves_white = 0
         for a in range(8):
-            for i in self.board[a]:
+            for p, i in enumerate(self.board[a]):
                 if i is None:
                     continue
                 elif i.color == "white":
-                    score += points[i.name]
+                    moves_white += len(self.legal_moves((a, p)))
+                    score += self.points[i.name]
+                    if i.name != "king":
+                        score += self.piece_square_values[i.name][a][p]
+                    else:
+                        score += self.piece_square_values["king" + self.phase][a][p]
                 else:
-                    score -= points[i.name]
+                    moves_black += len(self.legal_moves((a, p)))
+                    score -= self.points[i.name]
+                    if i.name != "king":
+                        score -= self.piece_square_values[i.name][7-a][7-p]
+                    else:
+                        score -= self.piece_square_values["king" + self.phase][7-a][7-p]
+        score += (moves_white - moves_black) * 0.1
         return score
     
     def minimax(self, depth, alpha = -10**10, beta = 10**10):
-        moves = []
+        tt_key = (self.current_hash, depth)
+        if tt_key in self.tsp:
+            return self.tsp[tt_key]
+
         if depth == 0 or self.is_game_over():
-            return self.evaluate()
-        else: 
-            for a in range(8):
-                for j, i in enumerate(self.board[a]):
-                    if i is None:
-                        continue
-                    else:
-                        if i.color == self.turn:
-                            for q in self.legal_moves((a, j)):
-                                state = self.save_move_state((a, j), q)
-                                self.make_move((a, j), q)
-                                score = self.minimax(depth-1, alpha, beta)
-                                self.undo_move(state)
-                                if self.turn == "white":
-                                    if score > alpha:
-                                        alpha = score
-                                    if beta <= alpha:
-                                        break
-                                else:
-                                    if score < beta:
-                                        beta = score
-                                    if beta <= alpha:
-                                        break 
-        if self.turn == "white":
-            return alpha
-        else:
-            return beta
+            if self.is_checkmate():
+                if self.turn == "white":
+                    score = self.evaluate() - 10**4 + depth
+                else:
+                    score = self.evaluate() + 10**4 - depth
+            else:
+                score = 0
+            self.tsp[tt_key] = score
+            return score
+
+        for a in range(8):
+            for j, i in enumerate(self.board[a]):
+                if i is None:
+                    continue
+                moves = self.legal_moves((a, j))
+                if i.color == self.turn:
+                    for q in moves:
+                        state = self.save_move_state()
+                        self.make_move((a, j), q)
+                        score = self.minimax(depth-1, alpha, beta)
+                        self.undo_move(state)
+                        if self.turn == "white":
+                            if score > alpha:
+                                alpha = score
+                            if beta <= alpha:
+                                break
+                        else:
+                            if score < beta:
+                                beta = score
+                            if beta <= alpha:
+                                break
+        score = alpha if self.turn == "white" else beta
+        self.tsp[tt_key] = score
+        return score
 
     def best_move(self, depth, alpha = -10**10, beta = 10**10):
         scores = {}
@@ -558,7 +758,7 @@ class Board:
                     else:
                         if i.color == self.turn:
                             for q in self.legal_moves((a, j)):
-                                state = self.save_move_state((a, j), q)
+                                state = self.save_move_state()
                                 self.make_move((a, j), q)
                                 scores[((a,j), q)] = self.minimax(depth-1, alpha, beta)
                                 self.undo_move(state)
