@@ -18,29 +18,7 @@ Understand the real techniques used in production chess engines, at a smaller sc
 3. System Architecture
    
 The project is divided into three layers:
-┌─────────────────────────────────────┐
-│           Browser (Frontend)         │
-│  HTML/CSS/JS — renders board,        │
-│  sends clicks as HTTP requests       │
-└──────────────┬──────────────────────┘
-               │  HTTP (JSON)
-               ▼
-┌─────────────────────────────────────┐
-│         Flask REST API               │
-│  /state  /move  /engine-move         │
-│  /options  /reset                    │
-└──────────────┬──────────────────────┘
-               │  Python method calls
-               ▼
-┌─────────────────────────────────────┐
-│         Board (Engine Core)          │
-│  - Move generation                   │
-│  - Legal move filtering              │
-│  - Game state management             │
-│  - Minimax + Alpha-Beta search       │
-│  - Zobrist hashing                   │
-│  - Static evaluation                 │
-└─────────────────────────────────────┘
+Browser/Frontend --> Flask Rest API --> Engine Core
 
 Data Flow — Player Move
 User clicks piece → JS captures click
@@ -99,7 +77,7 @@ The evaluation function converts a board position into a single number (in centi
 
 **Material**: Each piece has a fixed value (queen = 900, rook = 500, bishop = knight = 300, pawn = 100). The score is the sum of White's material minus Black's material.
 
-**Piece-Square Tables **(PSTs): Each piece type has an 8×8 table of positional bonuses. These encode standard chess principles in a lookup-table form:
+**Piece-Square Tables**(PSTs): Each piece type has an 8×8 table of positional bonuses. These encode standard chess principles in a lookup-table form:
 
 Pawns: prefer central advances, penalize doubled pawns (partially)
 Knights: heavily penalized on the edge ("a knight on the rim is dim"), rewarded in the center
@@ -127,7 +105,9 @@ Together these implement the search's move-make-undo cycle. make_move() handles 
 minimax(depth, alpha, beta)
 
 The recursive search function. Returns the best score achievable from the current position at the given remaining depth. Alpha and beta are passed down the call stack and updated at each node. The transposition table is checked at the start and written at the end of each call.
+
 best_move(depth)
+
 The public interface to the search. Iterates all legal moves at the root, calls minimax(depth-1) for each, and returns the move with the best resulting score. The transposition table is cleared here at the start of each new search to avoid stale entries.
 
 evaluate()
