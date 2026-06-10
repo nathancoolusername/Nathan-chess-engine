@@ -42,7 +42,7 @@ python engine.py
 Documentation
 
 Full technical documentation:
-→ `/docs/engine_documentation.md`
+→ `documentation.md`
 
 Future Improvements
 
