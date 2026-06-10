@@ -418,29 +418,57 @@ class Board:
                             
     def is_in_check(self, color):
         opponent = "black" if color == "white" else "white"
+        # Find king first instead of iterating all pieces
+        king_pos = None
         for i in range(8):
-            for j, a in enumerate(self.board[i]):
-                if a is None:
-                    continue
-                if a.name == "king" and a.color == color:
-                    return self.is_attacked((i, j), opponent)
-        return False
+            for j, piece in enumerate(self.board[i]):
+                if piece is not None and piece.name == "king" and piece.color == color:
+                    king_pos = (i, j)
+                    break
+            if king_pos:
+                break
+        if king_pos is None:
+            return False
+        return self.is_attacked(king_pos, opponent)
     
     def legal_moves(self, square):
         moves = []
-        everything = self.get_moves(square)
-        if everything == []:
+        pseudo_moves = self.get_moves(square)
+        if pseudo_moves == []:
             return []
-        for i in everything:
-            state = self.save_move_state()
-            self.board[i[0]][i[1]] = self.board[square[0]][square[1]]
+        
+        # Cache check results to avoid redundant is_in_check calls
+        piece_color = self.board[square[0]][square[1]].color
+        
+        for target in pseudo_moves:
+            # Quick capture of target piece
+            captured = self.board[target[0]][target[1]]
+            
+            # Make the move
+            self.board[target[0]][target[1]] = self.board[square[0]][square[1]]
             self.board[square[0]][square[1]] = None
-            if self.en_passant_square is not None and self.board[i[0]][i[1]].name == "pawn" and i == self.en_passant_square:
-                capture_sq = (i[0] + 1, i[1]) if self.board[i[0]][i[1]].color == "white" else (i[0] - 1, i[1])
+            
+            # Handle en passant capture
+            en_passant_capture = None
+            if (self.board[target[0]][target[1]].name == "pawn" and 
+                target == self.en_passant_square):
+                capture_sq = (target[0] + 1, target[1]) if piece_color == "white" else (target[0] - 1, target[1])
+                en_passant_capture = self.board[capture_sq[0]][capture_sq[1]]
                 self.board[capture_sq[0]][capture_sq[1]] = None
-            if not self.is_in_check(self.board[i[0]][i[1]].color):
-                moves.append(i)
-            self.undo_move(state)
+            
+            # Check if king is in check (illegal move)
+            if not self.is_in_check(piece_color):
+                moves.append(target)
+            
+            # Undo the move
+            self.board[square[0]][square[1]] = self.board[target[0]][target[1]]
+            self.board[target[0]][target[1]] = captured
+            
+            # Restore en passant capture
+            if en_passant_capture is not None:
+                capture_sq = (target[0] + 1, target[1]) if piece_color == "white" else (target[0] - 1, target[1])
+                self.board[capture_sq[0]][capture_sq[1]] = en_passant_capture
+        
         return moves
     
     def save_move_state(self):
@@ -677,50 +705,62 @@ class Board:
         if self.phase == "Mid":
             for a in range(8):
                 for i in self.board[a]:
-                    if i is not None:
-                        piece_count += self.points[i.name]
-        if piece_count < 14 : 
+                    if i is not None and i.name != "king":
+                        piece_count += 1
+        if piece_count <= 6: 
             self.phase = "End"
                        
     def evaluate(self):
         self.game_phase()
         score = 0
-        moves_black = 0
-        moves_white = 0
         for a in range(8):
             for p, i in enumerate(self.board[a]):
                 if i is None:
                     continue
                 elif i.color == "white":
-                    moves_white += len(self.legal_moves((a, p)))
                     score += self.points[i.name]
                     if i.name != "king":
                         score += self.piece_square_values[i.name][a][p]
                     else:
                         score += self.piece_square_values["king" + self.phase][a][p]
                 else:
-                    moves_black += len(self.legal_moves((a, p)))
                     score -= self.points[i.name]
                     if i.name != "king":
                         score -= self.piece_square_values[i.name][7-a][7-p]
                     else:
                         score -= self.piece_square_values["king" + self.phase][7-a][7-p]
-        score += (moves_white - moves_black) * 0.1
         return score
     
+    def sort_moves(self, moves, from_square):
+        """Sort moves with captures first (better alpha-beta pruning)"""
+        to_square = from_square
+        captures = []
+        quiets = []
+        for move in moves:
+            if self.board[move[0]][move[1]] is not None:
+                captures.append(move)
+            else:
+                quiets.append(move)
+        return captures + quiets
+
     def minimax(self, depth, alpha = -10**10, beta = 10**10):
         tt_key = (self.current_hash, depth)
         if tt_key in self.tsp:
             return self.tsp[tt_key]
 
-        if depth == 0 or self.is_game_over():
+        if depth == 0:
+            score = self.evaluate()
+            self.tsp[tt_key] = score
+            return score
+        
+        if self.is_game_over():
             if self.is_checkmate():
                 if self.turn == "white":
                     score = self.evaluate() - 10**4 + depth
                 else:
                     score = self.evaluate() + 10**4 - depth
             else:
-                score = 0
+                score = self.evaluate()
             self.tsp[tt_key] = score
             return score
 
@@ -730,6 +770,7 @@ class Board:
                     continue
                 moves = self.legal_moves((a, j))
                 if i.color == self.turn:
+                    moves = self.sort_moves(moves, (a, j))
                     for q in moves:
                         state = self.save_move_state()
                         self.make_move((a, j), q)
@@ -750,7 +791,11 @@ class Board:
         return score
 
     def best_move(self, depth, alpha = -10**10, beta = 10**10):
+        self.tsp = {}  # Clear transposition table for each new search
         scores = {}
+        best_moves = []
+        
+        # Collect all legal moves for current player
         for a in range(8):
                 for j, i in enumerate(self.board[a]):
                     if i is None:
@@ -758,10 +803,24 @@ class Board:
                     else:
                         if i.color == self.turn:
                             for q in self.legal_moves((a, j)):
-                                state = self.save_move_state()
-                                self.make_move((a, j), q)
-                                scores[((a,j), q)] = self.minimax(depth-1, alpha, beta)
-                                self.undo_move(state)
+                                best_moves.append(((a, j), q))
+        
+        # Sort by capture priority and piece value
+        def move_priority(move):
+            from_sq, to_sq = move
+            target = self.board[to_sq[0]][to_sq[1]]
+            if target is not None:
+                return self.points[target.name] * 10  # Prioritize valuable captures
+            return 0
+        
+        best_moves.sort(key=move_priority, reverse=True)
+        
+        for move_pair in best_moves:
+            state = self.save_move_state()
+            self.make_move(move_pair[0], move_pair[1])
+            scores[move_pair] = self.minimax(depth-1, alpha, beta)
+            self.undo_move(state)
+        
         if not scores:
             return None
         if self.turn == "white":
