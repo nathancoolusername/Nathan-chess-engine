@@ -116,10 +116,6 @@ The leaf-node scoring function. Iterates the board once, summing material and PS
 
 7. Design Decisions
 
-Python over C++
-
-Python was chosen because the goal was to learn the algorithms, not to optimize raw speed. Python's readability made it easier to reason about correctness, especially for the many edge cases in chess rules. The tradeoff is real: a C++ implementation of the same algorithm would search 50–100× faster, but would add hundreds of lines of boilerplate and take the focus away from the chess logic itself.
-
 Flask over a desktop UI
 
 Flask was chosen because it decouples the engine from the display layer completely. The engine exposes a JSON API and doesn't care what renders it. This also made development faster: the frontend could be changed without touching the engine, and the engine could be tested with curl without a UI.
